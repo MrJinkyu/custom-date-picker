@@ -1,6 +1,6 @@
 <template>
   <div class="container">
-    <input ref="inputRef" type="text" class="datepicker-input" :value="modelValue" @input="handleInput" @keydown="handleKeydown" :placeholder="format" maxlength="10" :readonly="!allowManualInput" @click="showModal = !showModal">
+    <input ref="inputRef" type="text" class="datepicker-input" :value="modelValue" @input="handleInput" @keydown="handleKeydown" :placeholder="type === 'dateTime' ? `${format} HH:mm:ss`:format" :maxlength="type === 'dateTime' ? 19 : 10" :readonly="!allowManualInput" @click="showModal = !showModal">
     <Transition name="modal-fade">
       <div class="modal" v-if="showModal" ref="modalRef">
         <div class="modal-header">
@@ -12,13 +12,19 @@
           <div class="calendar-day" v-for="day in DAYS_OF_WEEK" :key="day">
             {{ day }}
           </div>
-          <div @click="onDateClick(day.date)" class="calendar-date" :class="{'is-today':isToday(day.date) && !isReservation(day.date), 'is-reservation':isReservation(day.date), 'is-not-current-month': !day.isCurrentMonth}" v-for="day in daysInMonth" :key="day.date.getTime()">
+          <div @click="onDateClick(day.date)" class="calendar-date" :class="{'is-today':isToday(day.date) && !isReservation(day.date) && !isSelected(day.date), 'is-reservation':isReservation(day.date), 'is-not-current-month': !day.isCurrentMonth, 'is-selected':type === 'dateTime' && isSelected(day.date)}" v-for="day in daysInMonth" :key="day.date.getTime()">
             {{ day.date.getDate() }}
           </div>
         </div>
+
+        <div v-if="props.type === 'dateTime'" class="time-picker">
+            <input class="time-input" type="text" v-model="hour"  placeholder="HH"/>:
+            <input class="time-input" type="text" v-model="minute" placeholder="mm"/>:
+            <input class="time-input" type="text" v-model="second" placeholder="ss"/>
+            <button class="time-btn" @click="onSubmitBtnClick">확인</button>
+        </div>
       </div>
     </Transition>
-    <p>현재 예약 날짜: {{ modelValue }}</p>
   </div>
 </template>
 
@@ -27,11 +33,13 @@ interface Props{
   modelValue: string;
   format?: string;
   allowManualInput?: boolean;
+  type?: 'date' | 'dateTime';
 }
 
 const props = withDefaults(defineProps<Props>(),{
   format: 'YYYY-MM-DD',
   allowManualInput: false,
+  type: 'date',
 });
 
 const emit = defineEmits(['update:modelValue']);
@@ -40,6 +48,10 @@ const showModal = ref(false);
 const renderDate = ref(new Date());
 const inputRef = ref(null);
 const modalRef = ref(null);
+const hour = ref('');
+const minute = ref('');
+const second = ref('');
+const selectDate = ref<Date | null>(null);
 
 const DAYS_OF_WEEK = ['일', '월', '화', '수', '목', '금', '토'];
 
@@ -107,16 +119,39 @@ const formatDateInput = (input: string): string => {
   // 숫자만 남기기
   const cleaned = input.replace(/\D/g, '');
   
-  if (cleaned.length <= 4) {
-    return cleaned; // 연도만 입력되면 그대로 반환
-  } else if (cleaned.length <= 6) {
-    return `${cleaned.slice(0, 4)}-${cleaned.slice(4, 6)}`; // YYYY-MM
-  } else {
-    return `${cleaned.slice(0, 4)}-${cleaned.slice(4, 6)}-${cleaned.slice(6, 8)}`; // YYYY-MM-DD
+    if (props.type === 'date') {
+    if (cleaned.length <= 4) {
+      return cleaned; // 연도만 입력되면 그대로 반환
+    } else if (cleaned.length <= 6) {
+      return `${cleaned.slice(0, 4)}-${cleaned.slice(4, 6)}`; // YYYY-MM
+    } else {
+      return `${cleaned.slice(0, 4)}-${cleaned.slice(4, 6)}-${cleaned.slice(6, 8)}`; // YYYY-MM-DD
+    }
   }
+  
+  if (props.type === 'dateTime') {
+    if (cleaned.length <= 4) {
+      return cleaned; // 연도만 입력되면 그대로 반환
+    } else if (cleaned.length <= 6) {
+      return `${cleaned.slice(0, 4)}-${cleaned.slice(4, 6)}`; // YYYY-MM
+    } else if (cleaned.length <= 8) {
+      return `${cleaned.slice(0, 4)}-${cleaned.slice(4, 6)}-${cleaned.slice(6, 8)}`; // YYYY-MM-DD
+    } else if (cleaned.length <= 10) {
+      return `${cleaned.slice(0, 4)}-${cleaned.slice(4, 6)}-${cleaned.slice(6, 8)} ${cleaned.slice(8, 10)}`; // YYYY-MM-DD HH
+    } else if (cleaned.length <= 12) {
+      return `${cleaned.slice(0, 4)}-${cleaned.slice(4, 6)}-${cleaned.slice(6, 8)} ${cleaned.slice(8, 10)}:${cleaned.slice(10, 12)}`; // YYYY-MM-DD HH:mm
+    } else {
+      return `${cleaned.slice(0, 4)}-${cleaned.slice(4, 6)}-${cleaned.slice(6, 8)} ${cleaned.slice(8, 10)}:${cleaned.slice(10, 12)}:${cleaned.slice(12, 14)}`; // YYYY-MM-DD HH:mm:ss
+    }
+  }
+
+  return cleaned; // 기본값으로 반환
 };
 
 const handleInput = (event: Event) => {
+  if(props.allowManualInput === false){
+    return ;
+  }
   showModal.value = true;
   const input = event.target as HTMLInputElement;
   const value = input.value;
@@ -146,7 +181,14 @@ const formatDateToYYYYMMDD = (date: Date): string => {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0'); // 월은 0부터 시작하므로 +1
   const day = String(date.getDate()).padStart(2, '0'); // 일자를 2자리로 맞춤
-
+  if(props.type==='dateTime'){
+    if(hour.value === '' && minute.value === '' && second.value === ''){
+      hour.value = '12';
+      minute.value = '00';
+      second.value = '00';
+    }
+    return `${year}-${month}-${day} ${hour.value}:${minute.value}:${second.value}`;
+  }
   return `${year}-${month}-${day}`;
 };
 
@@ -168,10 +210,42 @@ const parseYYYYMMDDToDate = (dateString: string): Date | null => {
   }
 };
 
-const onDateClick = (date: Date) => {
+watch([hour,minute,second], () => {
+  if (props.modelValue) {
+    const [datePart] = props.modelValue.split(' '); // 날짜 부분만 추출 (시, 분, 초 제외)
+    
+
+    // 기존 날짜에 새로운 시, 분, 초 값을 합쳐서 emit
+    const updatedModelValue = `${datePart} ${hour.value}:${minute.value}:${second.value}`;
+    
+    emit('update:modelValue', updatedModelValue);
+  }
+});
+
+const onSubmitBtnClick = () => {
   showModal.value = false;
-  emit('update:modelValue', formatDateToYYYYMMDD(date));
+}
+
+const onDateClick = (date: Date) => {
+  if(props.type === 'date'){
+    emit('update:modelValue', formatDateToYYYYMMDD(date));
+    showModal.value = false;
+  }else{
+    selectDate.value = date;
+    emit('update:modelValue', formatDateToYYYYMMDD(date));
+  }
 };
+
+const isSelected = (date:Date) => {
+  if(!selectDate.value){
+    return null;
+  }
+  return (
+    date.getDate() === selectDate.value.getDate() &&
+    date.getMonth() === selectDate.value.getMonth() &&
+    date.getFullYear() === selectDate.value.getFullYear()
+  );
+}
 
 const isToday = (date:Date) => {
   const today = new Date();
@@ -199,7 +273,12 @@ const isReservation = (date:Date) => {
 
 watch(showModal, (newValue) => {
   if (!newValue) { // showModal이 false일 때
-    const regex = /^\d{4}-\d{2}-\d{2}$/;
+    let regex;
+    if (props.type === 'dateTime') {
+      regex = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/; // YYYY-MM-DD HH:mm:ss
+    } else {
+      regex = /^\d{4}-\d{2}-\d{2}$/; // YYYY-MM-DD
+    }
     if (!regex.test(props.modelValue)) {
       emit('update:modelValue', ''); // 형식이 맞지 않으면 빈 문자열로 초기화
       renderDate.value = new Date();
@@ -328,13 +407,45 @@ watch(showModal, (newValue) => {
   border-radius: 4px;
 }
 
-.is-reservation {
+.is-reservation, .is-selected {
   border: 1px solid #357EBD;
   border-radius: 4px;
   font-weight: bold;
 }
 
-.calendar-date:hover {
+.time-picker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-top: 1px solid lightgray;
+  padding-top: 10px;
+  margin-top: 10px;
+}
+
+.time-input {
+  width: 100%;
+  height: 24px;
+  text-align: right;
+  border: none;
   background-color: whitesmoke;
+  border-radius: 4px;
+  cursor: pointer;
+  outline: none;
+}
+
+.time-input:focus{
+  outline: 1px solid #357EBD;
+}
+
+.time-btn{
+  margin-left: 10px;
+  width: 100%;
+  border: none;
+  background-color: #357EBD;
+  color: white;
+  height: 24px;
+  border-radius: 4px;
+  cursor: pointer;
+  outline: 1px solid #357EBD;
 }
 </style>
